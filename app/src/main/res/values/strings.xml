@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">MarvelApiTest</string>
+
+    <string name="loading">Carregando. Aguarde...</string>
+    <string name="load_data_error">Não foi possível extrair os dados. Verifique sua conexão de internet</string>
+</resources>
