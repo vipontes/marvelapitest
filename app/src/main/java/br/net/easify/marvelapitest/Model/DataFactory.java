@@ -23,9 +23,14 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 
 import br.net.easify.marvelapitest.interfaces.ICharacterDelegate;
+import br.net.easify.marvelapitest.interfaces.IMarvelApiInterface;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class DataFactory {
 
@@ -94,7 +99,8 @@ public class DataFactory {
             return;
         }
 
-        new CharactersAsync(delegate).execute();
+        //new CharactersAsync(delegate).execute();
+        this.getCharactersWithRetrofit(delegate);
     }
 
     public Character getCharacter(int position) {
@@ -110,120 +116,160 @@ public class DataFactory {
         }
 
         characterListOffset += characterListLimit;
-        new CharactersAsync(delegate).execute();
+        //new CharactersAsync(delegate).execute();
+        this.getCharactersWithRetrofit(delegate);
     }
 
-    public class CharactersAsync extends AsyncTask<Void, Void, String> {
+//    public class CharactersAsync extends AsyncTask<Void, Void, String> {
+//
+//        private ICharacterDelegate delegate;
+//
+//        public CharactersAsync(ICharacterDelegate delegate) {
+//            this.delegate = delegate;
+//        }
+//
+//        @Override
+//        protected String doInBackground(Void... voids) {
+//            if (!isNetworkAvailable()) {
+//                return "";
+//            }
+//
+//            String jsonStr = "";
+//
+//            try {
+//                Long currentTime = DateTimeUtils.currentTimeMillis();
+//                byte[] hash = DigestUtils.md5(currentTime + Constants.PRIVATE_KEY + Constants.PUBLIC_KEY);
+//                String hashStr = new String(Hex.encodeHex(hash));
+//
+//                String urlStr =
+//                        Constants.MARVEL_BASE_URL +
+//                                "characters?ts=" +
+//                                currentTime +
+//                                "&apikey=" +
+//                                Constants.PUBLIC_KEY +
+//                                "&hash=" +
+//                                hashStr +
+//                                "&offset=" +
+//                                characterListOffset +
+//                                "&orderBy=name";
+//
+//                URL url = new URL(urlStr);
+//                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+//                connection.setConnectTimeout(15000);
+//                connection.setReadTimeout(30000);
+//                connection.setDoInput(true);
+//                connection.setDoOutput(false);
+//                connection.setRequestMethod("GET");
+//
+//                connection.setRequestProperty("accept", "application/json");
+//                connection.setRequestProperty("Accept-Charset", "UTF-8");
+//
+//                connection.setUseCaches(false);
+//
+//                InputStream inputStream = connection.getInputStream();
+//                InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
+//                BufferedReader reader = new BufferedReader(inputStreamReader);
+//                String line = reader.readLine();
+//                while (line != null) {
+//                    jsonStr += line;
+//                    line = reader.readLine();
+//                }
+//                reader.close();
+//                inputStreamReader.close();
+//                inputStream.close();
+//
+//            } catch (MalformedURLException e) {
+//                e.printStackTrace();
+//            } catch (IOException e) {
+//                e.printStackTrace();
+//            }
+//
+//            return jsonStr;
+//        }
+//
+//        @Override
+//        protected void onPostExecute(String jsonStr) {
+//            super.onPostExecute(jsonStr);
+//
+//            if (jsonStr.length() > 0) {
+//                try {
+//                    JSONObject obj = new JSONObject(URLDecoder.decode(jsonStr, "UTF-8"));
+//                    JSONObject data = obj.getJSONObject("data");
+//
+//                    characterListCount = Integer.parseInt(data.getString("count"));
+//                    characterListTotal = Integer.parseInt(data.getString("total"));
+//                    characterListLimit = Integer.parseInt(data.getString("limit"));
+//                    characterListOffset = Integer.parseInt(data.getString("offset"));
+//
+//                    db.setData(characterListCount, characterListTotal, characterListLimit, characterListOffset);
+//
+//                    JSONArray results = data.getJSONArray("results");
+//
+//                    for (int i = 0; i < results.length(); i++) {
+//                        JSONObject hero = results.getJSONObject(i);
+//                        JSONObject thumbnail = hero.getJSONObject("thumbnail");
+//                        String thumbUrl = thumbnail.getString("path") + "." + thumbnail.getString("extension");
+//
+//                        Character character = new Character(
+//                                Integer.parseInt(hero.getString("id")),
+//                                hero.getString("name"),
+//                                hero.getString("description"),
+//                                thumbUrl);
+//
+//                        db.addCharacter(character);
+//                        characterList.add(character);
+//                    }
+//
+//                    delegate.onGetCharacters(true);
+//                } catch (JSONException e) {
+//                    e.printStackTrace();
+//                    delegate.onGetCharacters(false);
+//                } catch (UnsupportedEncodingException e) {
+//                    e.printStackTrace();
+//                    delegate.onGetCharacters(false);
+//                }
+//            } else {
+//                delegate.onGetCharacters(false);
+//            }
+//        }
+//    }
 
-        private ICharacterDelegate delegate;
+    public void getCharactersWithRetrofit(final ICharacterDelegate delegate) {
+        Long currentTime = DateTimeUtils.currentTimeMillis();
+        byte[] hash = DigestUtils.md5(currentTime + Constants.PRIVATE_KEY + Constants.PUBLIC_KEY);
+        String hashStr = new String(Hex.encodeHex(hash));
 
-        public CharactersAsync(ICharacterDelegate delegate) {
-            this.delegate = delegate;
-        }
+        IMarvelApiInterface client = RetrofitClient.getClient().create(IMarvelApiInterface.class);
+        client.getCharacters(currentTime, Constants.PUBLIC_KEY, hashStr, characterListOffset).enqueue(new Callback<CharacterResponse>() {
+            @Override
+            public void onResponse(Call<CharacterResponse> call, Response<CharacterResponse> response) {
+                CharacterResponse res = response.body();
+                DataResponse data = res.getData();
+                List<ResultResponse> result = data.getResults();
 
-        @Override
-        protected String doInBackground(Void... voids) {
-            if (!isNetworkAvailable()) {
-                return "";
+                characterListCount = data.getCount();
+                characterListTotal = data.getTotal();
+                characterListLimit = data.getLimit();
+                characterListOffset = data.getOffset();
+
+                db.setData(characterListCount, characterListTotal, characterListLimit, characterListOffset);
+
+                for(ResultResponse item : result) {
+                    ThumbnailResponse thumbnail = item.getThumbnail();
+                    String thumbUrl = thumbnail.getPath() + "." + thumbnail.getExtension();
+                    Character character = new Character(item.getId(), item.getName(), item.getDescription(), thumbUrl);
+                    db.addCharacter(character);
+                    characterList.add(character);
+                }
+
+                delegate.onGetCharacters(true);
             }
 
-            String jsonStr = "";
-
-            try {
-                Long currentTime = DateTimeUtils.currentTimeMillis();
-                byte[] hash = DigestUtils.md5(currentTime + Constants.PRIVATE_KEY + Constants.PUBLIC_KEY);
-                String hashStr = new String(Hex.encodeHex(hash));
-
-                String urlStr =
-                        Constants.MARVEL_BASE_URL +
-                                "characters?ts=" +
-                                currentTime +
-                                "&apikey=" +
-                                Constants.PUBLIC_KEY +
-                                "&hash=" +
-                                hashStr +
-                                "&offset=" +
-                                characterListOffset +
-                                "&orderBy=name";
-
-                URL url = new URL(urlStr);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setConnectTimeout(15000);
-                connection.setReadTimeout(30000);
-                connection.setDoInput(true);
-                connection.setDoOutput(false);
-                connection.setRequestMethod("GET");
-
-                connection.setRequestProperty("accept", "application/json");
-                connection.setRequestProperty("Accept-Charset", "UTF-8");
-
-                connection.setUseCaches(false);
-
-                InputStream inputStream = connection.getInputStream();
-                InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
-                BufferedReader reader = new BufferedReader(inputStreamReader);
-                String line = reader.readLine();
-                while (line != null) {
-                    jsonStr += line;
-                    line = reader.readLine();
-                }
-                reader.close();
-                inputStreamReader.close();
-                inputStream.close();
-
-            } catch (MalformedURLException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            return jsonStr;
-        }
-
-        @Override
-        protected void onPostExecute(String jsonStr) {
-            super.onPostExecute(jsonStr);
-
-            if (jsonStr.length() > 0) {
-                try {
-                    JSONObject obj = new JSONObject(URLDecoder.decode(jsonStr, "UTF-8"));
-                    JSONObject data = obj.getJSONObject("data");
-
-                    characterListCount = Integer.parseInt(data.getString("count"));
-                    characterListTotal = Integer.parseInt(data.getString("total"));
-                    characterListLimit = Integer.parseInt(data.getString("limit"));
-                    characterListOffset = Integer.parseInt(data.getString("offset"));
-
-                    db.setData(characterListCount, characterListTotal, characterListLimit, characterListOffset);
-
-                    JSONArray results = data.getJSONArray("results");
-
-                    for (int i = 0; i < results.length(); i++) {
-                        JSONObject hero = results.getJSONObject(i);
-                        JSONObject thumbnail = hero.getJSONObject("thumbnail");
-                        String thumbUrl = thumbnail.getString("path") + "." + thumbnail.getString("extension");
-
-                        Character character = new Character(
-                                Integer.parseInt(hero.getString("id")),
-                                hero.getString("name"),
-                                hero.getString("description"),
-                                thumbUrl);
-
-                        db.addCharacter(character);
-                        characterList.add(character);
-                    }
-
-                    delegate.onGetCharacters(true);
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                    delegate.onGetCharacters(false);
-                } catch (UnsupportedEncodingException e) {
-                    e.printStackTrace();
-                    delegate.onGetCharacters(false);
-                }
-            } else {
+            @Override
+            public void onFailure(Call<CharacterResponse> call, Throwable t) {
                 delegate.onGetCharacters(false);
             }
-        }
+        });
     }
+
 }
